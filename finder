@@ -1,5 +1,5 @@
 -- SCRIPT 2 | SECRET GENERATION SCANNER + TRAIT + WEBHOOK + AUTO SERVER + CALCULADORA
--- VERSÃO FINAL CORRIGIDA - FUNÇÕES DEFINIDAS ANTES DO USO
+-- VERSÃO FINAL ROBUSTA - ACEITA QUALQUER INSTÂNCIA E RETRY DE GENERATION
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -65,9 +65,9 @@ local TRAITS = {
 }
 
 -- =========================
--- SECRET ANIMALS (PARA SCANNER)
+-- SECRET ANIMALS (PARA DETECÇÃO POR NOME)
 -- =========================
-local SECRET_ANIMALS = {
+local SECRET_NAMES = {
 	["La Vacca Saturno Saturnita"] = true,
 	["Los Tralaleritos"] = true,
 	["Graipuss Medussi"] = true,
@@ -97,26 +97,6 @@ local SECRET_ANIMALS = {
 	["Bisonte Giuppitere"] = true,
 	["Guerriro Digitale"] = true,
 	["Ketchuru and Musturu"] = true,
-	["Meowl"] = true,
-	["Strawberry Elephant"] = true,
-	["Cerberus"] = true,
-	["Capitano Moby"] = true,
-	["La Jolly Grande"] = true,
-	["Cooki and Milki"] = true,
-	["Ho Ho Ho Sahur"] = true,
-	["Chicleteira Noelteira"] = true,
-	["La Vacca Prese Presente"] = true,
-	["La Supreme Combinasion"] = true,
-	["Dragon Cannelloni"] = true,
-	["Ketchuru and Musturu"] = true,
-	["Chillin Chili"] = true,
-	["Los Combinasionas"] = true,
-	["La Secret Combinasion"] = true,
-	["Money Money Puggy"] = true,
-	["Nuclearo Dinossauro"] = true,
-	["Tacorita Bicicleta"] = true,
-	["25"] = true,
-	
 }
 
 -- =========================
@@ -252,6 +232,53 @@ local function getAnimalGeneration(animalModel)
 	end
 	
 	return 0
+end
+
+-- =========================
+-- WAIT FOR GENERATION (RETRY SYSTEM)
+-- =========================
+local function waitForGeneration(model, timeout)
+	local t = 0
+	print(`[RETRY] Aguardando generation por {timeout}s...`)
+	
+	while t < timeout do
+		local gen = getAnimalGeneration(model)
+		if gen > 0 then
+			print(`[RETRY] Generation encontrada: {formatNumber(gen)} após {t}s`)
+			return gen
+		end
+		task.wait(0.5)
+		t += 0.5
+	end
+	
+	print("[RETRY] Timeout - Generation não encontrada")
+	return 0
+end
+
+-- =========================
+-- DETECÇÃO DE SECRET POR NOME (ACEITA QUALQUER INSTÂNCIA)
+-- =========================
+local function isSecretName(objectName)
+	-- Verifica se o nome exato existe na lista
+	if SECRET_NAMES[objectName] then
+		return true, objectName
+	end
+	
+	-- Verifica por partes do nome (case-insensitive)
+	local lowerName = objectName:lower()
+	for secretName in pairs(SECRET_NAMES) do
+		local lowerSecret = secretName:lower()
+		-- Verifica se o nome do objeto contém o nome do secret
+		if lowerName:find(lowerSecret, 1, true) then
+			return true, secretName
+		end
+		-- Verifica se o secret name contém o nome do objeto
+		if lowerSecret:find(lowerName, 1, true) then
+			return true, secretName
+		end
+	end
+	
+	return false, nil
 end
 
 -- =========================
@@ -393,58 +420,67 @@ local function teleportRandom()
 end
 
 -- =========================
--- SCAN PLOTS (FUNÇÃO DEFINIDA ANTES DO USO)
+-- SCAN PLOTS ROBUSTO (ACEITA QUALQUER INSTÂNCIA + RETRY)
 -- =========================
 local function scanPlots()
-	local foundSecret = false
 	local plotsFolder = workspace:FindFirstChild("Plots")
-	
-	if not plotsFolder then 
-		print("[SCANNER] Pasta 'Plots' não encontrada")
-		return false 
+	if not plotsFolder then
+		warn("[SCANNER] Pasta Plots não encontrada")
+		return false
 	end
-	
-	print(`[SCANNER] Procurando em {#plotsFolder:GetChildren()} plots...`)
-	
-	for _, plot in ipairs(plotsFolder:GetChildren()) do
-		if plot:IsA("Model") then
-			-- Detecta trait usando método aperfeiçoado
-			local traitName, traitMultiplier = detectTrait(plot)
-			
-			-- Detecta secret animals
-			for _, obj in ipairs(plot:GetDescendants()) do
-				if obj:IsA("Model") and SECRET_ANIMALS[obj.Name] then
-					local baseGen = getAnimalGeneration(obj)
+
+	local scanStart = os.clock()
+	local scanDuration = 10 -- segundos
+	local foundSecret = false
+
+	print("[SCANNER] Scan contínuo por 10s iniciado...")
+	print(`[SCANNER] Verificando {#plotsFolder:GetChildren()} plots...`)
+
+	while os.clock() - scanStart < scanDuration do
+		for _, plot in ipairs(plotsFolder:GetChildren()) do
+			if plot:IsA("Model") then
+				local traitName, traitMultiplier = detectTrait(plot)
+
+				for _, obj in ipairs(plot:GetDescendants()) do
+					-- ✅ ACEITA QUALQUER TIPO DE INSTÂNCIA (Part, Model, MeshPart, etc.)
+					local isSecret, realName = isSecretName(obj.Name)
 					
-					if baseGen > 0 then
-						local totalGen = baseGen * traitMultiplier
-						foundSecret = true
+					if isSecret then
+						print(`[SCANNER] Possível secret detectado: {obj.Name} -> {realName}`)
+						print(`[SCANNER] Tipo: {obj.ClassName}`)
 						
-						print(`[SCANNER] Secret encontrado: {obj.Name} (Base: {formatNumber(baseGen)})`)
-						print(`[SCANNER] Trait: {traitName or "Nenhum"} (x{traitMultiplier})`)
-						print(`[SCANNER] Total: {formatNumber(totalGen)}`)
-						
-						-- Envia webhook apenas se estiver na faixa desejada
-						sendWebhook(
-							obj.Name,
-							baseGen,
-							traitName,
-							traitMultiplier,
-							totalGen
-						)
-						
-						task.wait(1) -- Pequena pausa entre detecções
+						-- ✅ WAIT FOR GENERATION COM RETRY
+						local baseGen = waitForGeneration(obj, 3)
+
+						if baseGen > 0 then
+							local totalGen = baseGen * traitMultiplier
+							foundSecret = true
+
+							print("[SCANNER] SECRET CONFIRMADO:", realName)
+							print("[SCANNER] Base:", formatNumber(baseGen), "Multiplier:", traitMultiplier)
+							print("[SCANNER] Total:", formatNumber(totalGen))
+
+							sendWebhook(
+								realName,
+								baseGen,
+								traitName,
+								traitMultiplier,
+								totalGen
+							)
+
+							return true
+						else
+							print(`[SCANNER] Secret {realName} detectado mas generation = 0`)
+						end
 					end
 				end
 			end
 		end
+		task.wait(0.5) -- Scan contínuo a cada 0.5s
 	end
-	
-	if not foundSecret then
-		print("[SCANNER] Nenhum secret encontrado neste server")
-	end
-	
-	return foundSecret
+
+	print("[SCANNER] Nenhum secret encontrado após scan contínuo de 10s.")
+	return false
 end
 
 -- =========================
@@ -457,16 +493,20 @@ print("scanPlots:", type(scanPlots) == "function" and "✅ DEFINIDA" or "❌ NÃ
 print("teleportRandom:", type(teleportRandom) == "function" and "✅ DEFINIDA" or "❌ NÃO DEFINIDA")
 print("sendWebhook:", type(sendWebhook) == "function" and "✅ DEFINIDA" or "❌ NÃO DEFINIDA")
 print("calculateManualGeneration:", type(calculateManualGeneration) == "function" and "✅ DEFINIDA" or "❌ NÃO DEFINIDA")
+print("isSecretName:", type(isSecretName) == "function" and "✅ DEFINIDA" or "❌ NÃO DEFINIDA")
+print("waitForGeneration:", type(waitForGeneration) == "function" and "✅ DEFINIDA" or "❌ NÃO DEFINIDA")
 print(string.rep("=", 60))
 
 -- =========================
 -- INICIALIZAÇÃO
 -- =========================
 print("\n" .. string.rep("⭐", 60))
-print("🚀 GENERATION SCANNER PRO v2.0 INICIADO")
+print("🚀 GENERATION SCANNER PRO v2.0 - VERSÃO ROBUSTA")
 print(string.rep("⭐", 60))
 print("📋 Funcionalidades ativas:")
-print("   ✅ Scanner automático de secrets")
+print("   ✅ Scanner contínuo (10s por scan)")
+print("   ✅ Aceita QUALQUER tipo de instância (Part, Model, etc.)")
+print("   ✅ Retry system para generation = 0")
 print("   ✅ Webhooks por faixa (3 tiers)")
 print("   ✅ Calculadora de generation")
 print("   ✅ Detecção aperfeiçoada de traits")
@@ -482,7 +522,7 @@ task.wait(2)
 -- =========================
 -- LOOP PRINCIPAL COM VERIFICAÇÃO DE FUNÇÕES
 -- =========================
-print("[SYSTEM] Iniciando scanner com teleport único...")
+print("[SYSTEM] Iniciando scanner robusto...")
 
 task.spawn(function()
 	-- Verificação adicional no início do loop
@@ -495,7 +535,8 @@ task.spawn(function()
 	end
 
 	while true do
-		print("\n[LOOP] Iniciando scan no server...")
+		print("\n" .. string.rep("-", 60))
+		print("[LOOP] Iniciando scan contínuo...")
 
 		local found = scanPlots()
 
@@ -524,5 +565,5 @@ task.spawn(function()
 end)
 
 print("[SYSTEM] Sistema totalmente operacional!")
-print("[SYSTEM] Scanner iniciado. Monitorando servidores...")
+print("[SYSTEM] Scanner robusto iniciado. Monitorando servidores...")
 print("[SYSTEM] Teleport único ativado - só irá teleportar uma vez se não encontrar secrets.")
