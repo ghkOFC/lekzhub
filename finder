@@ -1,13 +1,10 @@
 task.spawn(function()
-	local secretFoundEver = false
-
 	while true do
 		print("\n[LOOP] Iniciando scan no server...")
 
 		local found = scanPlots()
 
 		if found then
-			secretFoundEver = true
 			print("[LOOP] Secret encontrado! Scanner continuará ativo.")
 			task.wait(30)
 
@@ -22,9 +19,9 @@ task.spawn(function()
 				end
 
 				teleportRandom()
-				return -- ⬅️ ENCERRA O LOOP ATUAL
+				return -- encerra o loop desse server
 			else
-				print("[LOOP] Nenhum secret, mas teleport já foi feito. Não teleportando novamente.")
+				print("[LOOP] Nenhum secret e teleport já usado. Mantendo scan.")
 				task.wait(30)
 			end
 		end
